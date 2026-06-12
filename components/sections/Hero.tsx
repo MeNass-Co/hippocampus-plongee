@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { preload } from "react-dom";
 
 /* ─── Config ─── */
 const FRAME_COUNT = 211;
@@ -243,13 +244,22 @@ export function Hero() {
   const bitmapsRef = useRef<(ImageBitmap | null)[]>([]);
   const renderedFrameRef = useRef(0); // float position the canvas shows
   const lastDrawnRef = useRef(-1); // last float position actually drawn
-  const resizeDirtyRef = useRef(false);
+  const needsRedrawRef = useRef(false); // resize or a better frame arrived
   const rafRef = useRef<number | null>(null);
   const inViewRef = useRef(true);
   const lastTickRef = useRef(0);
   const [progress, setProgress] = useState(0);
   const [imagesLoaded, setImagesLoaded] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  /* Emit <link rel="preload"> for the lattice in the initial HTML: the
+     backbone frames start downloading with the page, before hydration,
+     so the scrub responds the moment the user reaches for the wheel. */
+  for (let i = 0; i < FRAME_COUNT; i += LATTICE_STEP) {
+    // crossOrigin anonymous matches fetch()'s default cors/same-origin mode;
+    // without it the preload goes unused and every frame downloads twice
+    preload(getFrameSrc(i + 1), { as: "fetch", crossOrigin: "anonymous" });
+  }
 
   /* Detect reduced motion preference */
   useEffect(() => {
@@ -334,13 +344,15 @@ export function Hero() {
       ctx.globalAlpha = 1;
 
       lastDrawnRef.current = pos;
-      resizeDirtyRef.current = false;
+      needsRedrawRef.current = false;
     },
     [nearestLoaded]
   );
 
-  /* Frame loading: frame 0 first (poster swap), then a coarse lattice so
-     fast scrubbing always lands near a real frame, then fill every gap.
+  /* Frame loading: the coarse lattice loads first so fast scrubbing always
+     lands near a real frame; after that, whichever unloaded frame is closest
+     to the user's live scroll position wins — first-load scrolling catches up
+     in real time instead of waiting for a fixed sequence.
      createImageBitmap decodes off the main thread — no decode jank on draw. */
   useEffect(() => {
     if (prefersReducedMotion) return;
@@ -349,17 +361,33 @@ export function Hero() {
     bitmapsRef.current = bitmaps;
     const controller = new AbortController();
 
-    // Build load order: 0, lattice, then the rest in sequence
-    const order: number[] = [0];
-    for (let i = LATTICE_STEP; i < FRAME_COUNT; i += LATTICE_STEP) order.push(i);
-    for (let i = 1; i < FRAME_COUNT; i++) {
-      if (i % LATTICE_STEP !== 0) order.push(i);
+    const lattice: number[] = [];
+    for (let i = 0; i < FRAME_COUNT; i += LATTICE_STEP) lattice.push(i);
+    const pending = new Set<number>();
+    for (let i = 0; i < FRAME_COUNT; i++) {
+      if (i % LATTICE_STEP !== 0) pending.add(i);
     }
 
-    let cursor = 0;
+    let latticeCursor = 0;
+    const nextIndex = (): number => {
+      if (latticeCursor < lattice.length) return lattice[latticeCursor++];
+      let best = -1;
+      let bestDist = Infinity;
+      const center = renderedFrameRef.current;
+      for (const i of pending) {
+        const d = Math.abs(i - center);
+        if (d < bestDist) {
+          bestDist = d;
+          best = i;
+        }
+      }
+      if (best >= 0) pending.delete(best);
+      return best;
+    };
+
     const pump = () => {
-      if (cursor >= order.length) return;
-      const index = order[cursor++];
+      const index = nextIndex();
+      if (index < 0) return;
       fetch(getFrameSrc(index + 1), { signal: controller.signal })
         .then((res) => (res.ok ? res.blob() : Promise.reject(res.status)))
         .then((blob) => createImageBitmap(blob))
@@ -369,6 +397,9 @@ export function Hero() {
             return;
           }
           bitmaps[index] = bitmap;
+          // Repaint on arrival: if the canvas is showing a distant fallback,
+          // the better frame replaces it without waiting for the next scroll
+          needsRedrawRef.current = true;
           if (index === 0) setImagesLoaded(true);
         })
         .catch(() => {
@@ -421,7 +452,7 @@ export function Hero() {
 
         if (
           Math.abs(rendered - lastDrawnRef.current) > 0.004 ||
-          resizeDirtyRef.current
+          needsRedrawRef.current
         ) {
           drawAt(rendered);
         }
@@ -474,7 +505,7 @@ export function Hero() {
   useEffect(() => {
     if (!imagesLoaded) return;
     const handleResize = () => {
-      resizeDirtyRef.current = true;
+      needsRedrawRef.current = true;
       drawAt(renderedFrameRef.current);
     };
     window.addEventListener("resize", handleResize);

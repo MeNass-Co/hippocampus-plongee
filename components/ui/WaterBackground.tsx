@@ -22,6 +22,7 @@ uniform vec2  u_res;      // canvas size in CSS pixels
 uniform float u_time;
 uniform vec2  u_mouse;    // glow position in CSS pixels
 uniform float u_glow;     // 0..1 glow strength (fades in/out)
+uniform float u_scale;    // glow radius multiplier (touch shrinks the lamp)
 
 float hash(float a, float b) {
   // Sign-preserving fract, matching JS "(sin(n) * 43758.5453) % 1"
@@ -74,7 +75,8 @@ void main() {
   // Cursor glow: broad brightening of the caustics near the cursor
   vec2 mouseThird = u_mouse / 3.0;
   float dist = distance(px, mouseThird);
-  float mouseGlow = (dist < 200.0 ? (1.0 - dist / 200.0) * 0.45 : 0.0) * u_glow;
+  float radius = 200.0 * u_scale;
+  float mouseGlow = (dist < radius ? (1.0 - dist / radius) * 0.45 : 0.0) * u_glow;
 
   float brightness = caustic * 0.21 + soft * 0.09 + mouseGlow;
 
@@ -84,7 +86,7 @@ void main() {
   float alpha = brightness * 2.5;
 
   // Spotlight halo on top of the caustics (the "flashlight")
-  float spotDist = dist / 100.0; // 100 third-res px, like the 2D gradient
+  float spotDist = dist / (100.0 * u_scale); // 100 third-res px at full scale
   float spot = 0.0;
   if (spotDist < 1.0) {
     if (spotDist < 0.3) {
@@ -170,6 +172,7 @@ export default function WaterBackground() {
     const uTime = gl.getUniformLocation(program, 'u_time')
     const uMouse = gl.getUniformLocation(program, 'u_mouse')
     const uGlow = gl.getUniformLocation(program, 'u_glow')
+    const uScale = gl.getUniformLocation(program, 'u_scale')
 
     gl.disable(gl.DEPTH_TEST)
     gl.disable(gl.BLEND)
@@ -184,6 +187,9 @@ export default function WaterBackground() {
     const glowPos = { x: -10000, y: -10000 }
     let glowTarget = 0
     let glow = 0
+    // A fingertip lamp is smaller and dimmer than a cursor: the finger sits
+    // on the glass, so the light should read as a point, not a floodlight
+    let glowScale = 1
 
     const handleVisibility = () => {
       isVisible = !document.hidden
@@ -199,7 +205,7 @@ export default function WaterBackground() {
     resize()
     window.addEventListener('resize', resize)
 
-    const aimAt = (x: number, y: number) => {
+    const aimAt = (x: number, y: number, scale: number, strength: number) => {
       // First contact: snap the glow to the finger instead of sliding across
       if (glow < 0.01) {
         glowPos.x = x
@@ -207,7 +213,8 @@ export default function WaterBackground() {
       }
       pointer.x = x
       pointer.y = y
-      glowTarget = 1
+      glowScale = scale
+      glowTarget = strength
     }
 
     // Browsers synthesize mouse events after taps — ignore mouse input for a
@@ -215,7 +222,7 @@ export default function WaterBackground() {
     let lastTouchAt = -10000
     const onMouseMove = (e: MouseEvent) => {
       if (performance.now() - lastTouchAt < 1000) return
-      aimAt(e.clientX, e.clientY)
+      aimAt(e.clientX, e.clientY, 1, 1)
     }
     const onMouseLeave = () => {
       glowTarget = 0
@@ -223,7 +230,7 @@ export default function WaterBackground() {
     const onTouchMove = (e: TouchEvent) => {
       lastTouchAt = performance.now()
       const t = e.touches[0]
-      if (t) aimAt(t.clientX, t.clientY)
+      if (t) aimAt(t.clientX, t.clientY, 0.55, 0.5)
     }
     const onTouchEnd = (e: TouchEvent) => {
       lastTouchAt = performance.now()
@@ -257,6 +264,7 @@ export default function WaterBackground() {
       gl.uniform1f(uTime, time)
       gl.uniform2f(uMouse, glowPos.x, glowPos.y)
       gl.uniform1f(uGlow, glow)
+      gl.uniform1f(uScale, glowScale)
       gl.drawArrays(gl.TRIANGLES, 0, 3)
     }
     animationId = requestAnimationFrame(draw)

@@ -14,7 +14,9 @@ const SMOOTHING_TAU = 90;
 /* Coarse-lattice loading step: every Nth frame loads first so fast scrubbing
    always finds a nearby frame while the gaps fill in. */
 const LATTICE_STEP = 16;
-const MAX_PARALLEL_LOADS = 6;
+/* HTTP/2 multiplexes: with ~15KB frames, round trips dominate, so a wide
+   pipe shortens the rough first seconds far more than it costs. */
+const MAX_PARALLEL_LOADS = 14;
 /* Decoded-bitmap budget: holding all 418 frames decoded would cost ~3.4GB
    at 1920px. Instead the compressed blobs stay in memory (~20MB) and only
    the lattice plus a sliding window around the scrub position is decoded. */
@@ -456,25 +458,35 @@ export function Hero() {
 
     const lattice: number[] = [];
     for (let i = 0; i < FRAME_COUNT; i += LATTICE_STEP) lattice.push(i);
-    const pending = new Set<number>();
-    for (let i = 0; i < FRAME_COUNT; i++) {
-      if (i % LATTICE_STEP !== 0) pending.add(i);
+
+    /* Binary-refinement download order: after the lattice, fetch the frames
+       that halve the largest remaining gap EVERYWHERE (step 8, then 4, 2, 1)
+       instead of perfecting one region while the rest stays coarse. The whole
+       scrub gets uniformly smoother with every pass; within a pass, frames
+       nearest the live scroll position go first. */
+    const levels: Set<number>[] = [];
+    for (let step = LATTICE_STEP / 2; step >= 1; step /= 2) {
+      const level = new Set<number>();
+      for (let i = step; i < FRAME_COUNT; i += step * 2) level.add(i);
+      levels.push(level);
     }
 
     let latticeCursor = 0;
     const nextIndex = (): number => {
       if (latticeCursor < lattice.length) return lattice[latticeCursor++];
+      const level = levels.find((l) => l.size > 0);
+      if (!level) return -1;
       let best = -1;
       let bestDist = Infinity;
       const center = renderedFrameRef.current;
-      for (const i of pending) {
+      for (const i of level) {
         const d = Math.abs(i - center);
         if (d < bestDist) {
           bestDist = d;
           best = i;
         }
       }
-      if (best >= 0) pending.delete(best);
+      level.delete(best);
       return best;
     };
 

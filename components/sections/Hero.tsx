@@ -3,11 +3,18 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 /* ─── Config ─── */
-const FRAME_COUNT = 106;
+const FRAME_COUNT = 211;
 const EXPO_EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
+/* Exponential smoothing time constant (ms) — how fast the rendered frame
+   chases the scroll target. Lower = snappier, higher = more inertia. */
+const SMOOTHING_TAU = 90;
+/* Coarse-lattice loading step: every Nth frame loads first so fast scrubbing
+   always finds a nearby frame while the gaps fill in. */
+const LATTICE_STEP = 8;
+const MAX_PARALLEL_LOADS = 6;
 
 function getFrameSrc(index: number): string {
-  return `/assets/video/frames/frame_${String(index).padStart(3, "0")}.jpg`;
+  return `/assets/video/frames/frame_${String(index).padStart(3, "0")}.webp`;
 }
 
 /* ─── Panel definitions ─── */
@@ -52,7 +59,8 @@ function getPanelStyle(
 
   let opacity = 0;
   if (p >= start && p <= end) {
-    if (p < start + fadeIn) {
+    if (p < start + fadeIn && start > 0) {
+      // First panel (start === 0) stays fully visible at rest
       opacity = (p - start) / fadeIn;
     } else if (p <= end - fadeOut) {
       opacity = 1;
@@ -98,7 +106,10 @@ function TextPanel({
         className="pointer-events-none absolute inset-0 flex items-center justify-center px-4 md:px-10"
         style={style}
       >
-        <div className="text-center relative">
+        <div
+          className="text-center relative animate-fade-up"
+          style={{ animationDuration: "1.2s" }}
+        >
           {/* Large seahorse watermark behind the title */}
           <img
             src="/assets/photos/logo-cyan.webp"
@@ -193,7 +204,7 @@ function TextPanel({
         {panel.cta && (
           <a
             href={panel.cta.href}
-            className="group mt-8 inline-flex items-center gap-3 rounded-full bg-primary px-8 py-4 text-[15px] font-semibold tracking-wide text-on-primary transition-transform duration-500 active:scale-[0.98]"
+            className="group mt-8 inline-flex items-center gap-3 rounded-full bg-primary px-8 py-4 text-[15px] font-semibold tracking-wide text-on-primary transition-transform duration-500 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             style={{ transitionTimingFunction: EXPO_EASE }}
           >
             {panel.cta.text}
@@ -229,8 +240,13 @@ function TextPanel({
 export function Hero() {
   const sectionRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imagesRef = useRef<HTMLImageElement[]>([]);
-  const currentFrameRef = useRef(0);
+  const bitmapsRef = useRef<(ImageBitmap | null)[]>([]);
+  const renderedFrameRef = useRef(0); // float position the canvas shows
+  const lastDrawnRef = useRef(-1); // last float position actually drawn
+  const resizeDirtyRef = useRef(false);
+  const rafRef = useRef<number | null>(null);
+  const inViewRef = useRef(true);
+  const lastTickRef = useRef(0);
   const [progress, setProgress] = useState(0);
   const [imagesLoaded, setImagesLoaded] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -245,150 +261,225 @@ export function Hero() {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  /* Draw a single frame on canvas (object-cover style) */
-  const drawFrame = useCallback((frameIndex: number) => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    const img = imagesRef.current[frameIndex];
-    if (!canvas || !ctx || !img || !img.complete || !img.naturalWidth) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-
-    // Only resize canvas buffer when dimensions change
-    const targetW = Math.round(rect.width * dpr);
-    const targetH = Math.round(rect.height * dpr);
-    if (canvas.width !== targetW || canvas.height !== targetH) {
-      canvas.width = targetW;
-      canvas.height = targetH;
+  /* Nearest loaded bitmap to an index — fallback while gaps fill in */
+  const nearestLoaded = useCallback((index: number): ImageBitmap | null => {
+    const bitmaps = bitmapsRef.current;
+    if (bitmaps[index]) return bitmaps[index];
+    for (let d = 1; d < FRAME_COUNT; d++) {
+      const lo = bitmaps[index - d];
+      if (lo) return lo;
+      const hi = bitmaps[index + d];
+      if (hi) return hi;
     }
-
-    // Reset transform then scale for DPR
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    // Draw image covering the canvas (object-cover behavior)
-    const imgRatio = img.naturalWidth / img.naturalHeight;
-    const canvasRatio = rect.width / rect.height;
-    let drawWidth: number,
-      drawHeight: number,
-      drawX: number,
-      drawY: number;
-
-    if (imgRatio > canvasRatio) {
-      drawHeight = rect.height;
-      drawWidth = drawHeight * imgRatio;
-      drawX = (rect.width - drawWidth) / 2;
-      drawY = 0;
-    } else {
-      drawWidth = rect.width;
-      drawHeight = drawWidth / imgRatio;
-      drawX = 0;
-      drawY = (rect.height - drawHeight) / 2;
-    }
-
-    ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+    return null;
   }, []);
 
-  /* Progressive frame loading: load first batch eagerly, rest lazily */
+  /* Draw a (possibly fractional) frame position with crossfade between
+     the two adjacent frames — sub-frame smoothness, no visible stepping. */
+  const drawAt = useCallback(
+    (pos: number) => {
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext("2d");
+      if (!canvas || !ctx) return;
+
+      const i0 = Math.floor(pos);
+      const frac = pos - i0;
+      const i1 = Math.min(i0 + 1, FRAME_COUNT - 1);
+      const base = nearestLoaded(i0);
+      if (!base) return;
+      const next = frac > 0.004 && i1 !== i0 ? bitmapsRef.current[i1] : null;
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const rect = canvas.getBoundingClientRect();
+
+      // Only resize canvas buffer when dimensions change
+      const targetW = Math.round(rect.width * dpr);
+      const targetH = Math.round(rect.height * dpr);
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+
+      // Draw image covering the canvas (object-cover behavior)
+      const drawCover = (img: ImageBitmap, alpha: number) => {
+        const imgRatio = img.width / img.height;
+        const canvasRatio = rect.width / rect.height;
+        let drawWidth: number,
+          drawHeight: number,
+          drawX: number,
+          drawY: number;
+
+        if (imgRatio > canvasRatio) {
+          drawHeight = rect.height;
+          drawWidth = drawHeight * imgRatio;
+          drawX = (rect.width - drawWidth) / 2;
+          drawY = 0;
+        } else {
+          drawWidth = rect.width;
+          drawHeight = drawWidth / imgRatio;
+          drawX = 0;
+          drawY = (rect.height - drawHeight) / 2;
+        }
+
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+      };
+
+      drawCover(base, 1);
+      if (next && next !== base) drawCover(next, frac);
+      ctx.globalAlpha = 1;
+
+      lastDrawnRef.current = pos;
+      resizeDirtyRef.current = false;
+    },
+    [nearestLoaded]
+  );
+
+  /* Frame loading: frame 0 first (poster swap), then a coarse lattice so
+     fast scrubbing always lands near a real frame, then fill every gap.
+     createImageBitmap decodes off the main thread — no decode jank on draw. */
   useEffect(() => {
     if (prefersReducedMotion) return;
 
-    const EAGER_COUNT = 10; // Load first 10 frames ASAP for initial display
-    const images: HTMLImageElement[] = new Array(FRAME_COUNT);
-    let eagerLoaded = 0;
-    let totalLoaded = 0;
+    const bitmaps: (ImageBitmap | null)[] = new Array(FRAME_COUNT).fill(null);
+    bitmapsRef.current = bitmaps;
+    const controller = new AbortController();
 
-    // Load a single frame and track progress
-    const loadFrame = (index: number, onLoad?: () => void) => {
-      const img = new Image();
-      img.src = getFrameSrc(index + 1); // frames are 1-indexed
-      img.onload = () => {
-        images[index] = img;
-        totalLoaded++;
-        if (totalLoaded === FRAME_COUNT) {
-          imagesRef.current = images;
-        }
-        onLoad?.();
-      };
-      // Store immediately so the ref has the slot even before load
-      if (!images[index]) images[index] = img;
-    };
-
-    // Phase 1: Load first EAGER_COUNT frames
-    for (let i = 0; i < Math.min(EAGER_COUNT, FRAME_COUNT); i++) {
-      loadFrame(i, () => {
-        eagerLoaded++;
-        if (eagerLoaded === Math.min(EAGER_COUNT, FRAME_COUNT)) {
-          // Mark as loaded once initial frames are ready
-          imagesRef.current = images;
-          setImagesLoaded(true);
-
-          // Phase 2: Load remaining frames in the background
-          for (let j = EAGER_COUNT; j < FRAME_COUNT; j++) {
-            loadFrame(j);
-          }
-        }
-      });
+    // Build load order: 0, lattice, then the rest in sequence
+    const order: number[] = [0];
+    for (let i = LATTICE_STEP; i < FRAME_COUNT; i += LATTICE_STEP) order.push(i);
+    for (let i = 1; i < FRAME_COUNT; i++) {
+      if (i % LATTICE_STEP !== 0) order.push(i);
     }
+
+    let cursor = 0;
+    const pump = () => {
+      if (cursor >= order.length) return;
+      const index = order[cursor++];
+      fetch(getFrameSrc(index + 1), { signal: controller.signal })
+        .then((res) => (res.ok ? res.blob() : Promise.reject(res.status)))
+        .then((blob) => createImageBitmap(blob))
+        .then((bitmap) => {
+          if (controller.signal.aborted) {
+            bitmap.close();
+            return;
+          }
+          bitmaps[index] = bitmap;
+          if (index === 0) setImagesLoaded(true);
+        })
+        .catch(() => {
+          /* aborted or network error — nearestLoaded covers the gap */
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) pump();
+        });
+    };
+    for (let i = 0; i < MAX_PARALLEL_LOADS; i++) pump();
+
+    return () => {
+      controller.abort();
+      for (const b of bitmaps) b?.close();
+      bitmapsRef.current = [];
+    };
   }, [prefersReducedMotion]);
 
-  /* Draw first frame once all images loaded */
-  useEffect(() => {
-    if (imagesLoaded) {
-      drawFrame(0);
-    }
-  }, [imagesLoaded, drawFrame]);
-
-  /* Scroll handler — drives canvas frame rendering */
+  /* Render loop — runs while the hero is on screen. Reads scroll position,
+     chases it with time-normalized exponential smoothing, redraws only when
+     the rendered position actually moved. */
   useEffect(() => {
     if (!imagesLoaded || prefersReducedMotion) return;
 
-    let ticking = false;
+    const tick = (now: number) => {
+      rafRef.current = null;
+      if (!inViewRef.current) return; // restarted by the observer
 
-    const handleScroll = () => {
       const section = sectionRef.current;
       if (!section) return;
 
       const rect = section.getBoundingClientRect();
       const scrollable = section.offsetHeight - window.innerHeight;
-      if (scrollable <= 0) return;
+      if (scrollable > 0) {
+        const p = Math.max(0, Math.min(1, -rect.top / scrollable));
 
-      const p = Math.max(0, Math.min(1, -rect.top / scrollable));
-      setProgress(p);
+        // Quantized so React re-renders only on visible panel changes
+        setProgress((prev) =>
+          Math.abs(prev - p) > 0.0015 || p === 0 || p === 1 ? p : prev
+        );
 
-      const frameIndex = Math.min(
-        FRAME_COUNT - 1,
-        Math.max(0, Math.round(p * (FRAME_COUNT - 1)))
-      );
+        const target = p * (FRAME_COUNT - 1);
+        const dt = Math.min(Math.max(now - lastTickRef.current, 1), 64);
+        const alpha = 1 - Math.exp(-dt / SMOOTHING_TAU);
+        let rendered =
+          renderedFrameRef.current +
+          (target - renderedFrameRef.current) * alpha;
+        if (Math.abs(target - rendered) < 0.01) rendered = target;
+        renderedFrameRef.current = rendered;
 
-      if (frameIndex !== currentFrameRef.current) {
-        currentFrameRef.current = frameIndex;
-        drawFrame(frameIndex); // Already inside rAF from onScroll, no need to double-wrap
+        if (
+          Math.abs(rendered - lastDrawnRef.current) > 0.004 ||
+          resizeDirtyRef.current
+        ) {
+          drawAt(rendered);
+        }
+      }
+
+      lastTickRef.current = now;
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    const start = () => {
+      if (rafRef.current === null) {
+        lastTickRef.current = performance.now();
+        rafRef.current = requestAnimationFrame(tick);
       }
     };
 
-    const onScroll = () => {
-      if (!ticking) {
-        requestAnimationFrame(() => {
-          handleScroll();
-          ticking = false;
-        });
-        ticking = true;
-      }
-    };
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        inViewRef.current = entry.isIntersecting;
+        if (entry.isIntersecting) start();
+      },
+      { rootMargin: "200px 0px" }
+    );
+    if (sectionRef.current) observer.observe(sectionRef.current);
 
-    handleScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [imagesLoaded, prefersReducedMotion, drawFrame]);
+    // Initial paint: snap straight to the current scroll position
+    const section = sectionRef.current;
+    if (section) {
+      const scrollable = section.offsetHeight - window.innerHeight;
+      const p =
+        scrollable > 0
+          ? Math.max(
+              0,
+              Math.min(1, -section.getBoundingClientRect().top / scrollable)
+            )
+          : 0;
+      renderedFrameRef.current = p * (FRAME_COUNT - 1);
+      drawAt(renderedFrameRef.current);
+    }
+    start();
+
+    return () => {
+      observer.disconnect();
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    };
+  }, [imagesLoaded, prefersReducedMotion, drawAt]);
 
   /* Handle resize — redraw current frame at new dimensions */
   useEffect(() => {
     if (!imagesLoaded) return;
-    const handleResize = () => drawFrame(currentFrameRef.current);
+    const handleResize = () => {
+      resizeDirtyRef.current = true;
+      drawAt(renderedFrameRef.current);
+    };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [imagesLoaded, drawFrame]);
+  }, [imagesLoaded, drawAt]);
 
   /* ─── Reduced motion fallback: static poster + text ─── */
   if (prefersReducedMotion) {
@@ -455,11 +546,7 @@ export function Hero() {
         />
 
         {/* Canvas for frame sequence */}
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 h-full w-full"
-          style={{ willChange: "transform" }}
-        />
+        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
 
         {/* Radial vignette */}
         <div

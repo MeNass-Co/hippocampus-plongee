@@ -9,7 +9,7 @@ export const contentType = "image/png";
 export default async function Image() {
   const [logoBuffer, frameBuffer] = await Promise.all([
     readFile(join(process.cwd(), "public/assets/photos/logo-cyan.png")),
-    readFile(join(process.cwd(), "public/assets/video/frames/frame_001.jpg")),
+    readFile(join(process.cwd(), "public/assets/video/hero-poster.jpeg")),
   ]);
   const logoBase64 = `data:image/png;base64,${logoBuffer.toString("base64")}`;
   const frameBase64 = `data:image/jpeg;base64,${frameBuffer.toString("base64")}`;

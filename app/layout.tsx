@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Noto_Serif, Manrope } from "next/font/google";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
@@ -16,9 +16,14 @@ const notoSerif = Noto_Serif({
 const manrope = Manrope({
   variable: "--font-body",
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "800"],
+  weight: ["300", "400", "500", "600", "700"],
   display: "swap",
 });
+
+export const viewport: Viewport = {
+  themeColor: "#040E1A",
+  colorScheme: "dark",
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://hippocampus-plongee.vercel.app'),
@@ -29,10 +34,6 @@ export const metadata: Metadata = {
   description: 'Club de plongée sous-marine à Sissonne (Aisne). Formations FFESSM, baptêmes, sorties en milieu naturel. Rejoignez l\'aventure sous-marine.',
   keywords: ['plongée', 'club plongée Sissonne', 'FFESSM', 'baptême plongée', 'formation plongée', 'Hippocampus', 'plongée Aisne', 'plongée Hauts-de-France'],
   authors: [{ name: 'HIPPOCAMPUS Diving Club' }],
-  icons: {
-    icon: '/assets/photos/logo-cyan.png',
-    apple: '/assets/photos/logo-cyan.png',
-  },
   openGraph: {
     type: 'website',
     locale: 'fr_FR',
@@ -78,7 +79,7 @@ export default function RootLayout({
               "@type": "SportsClub",
               "name": "HIPPOCAMPUS",
               "description": "Club de plongée sous-marine affilié FFESSM à Sissonne",
-              "url": "https://hippocampus-plongee.fr",
+              "url": "https://hippocampus-plongee.vercel.app",
               "address": {
                 "@type": "PostalAddress",
                 "streetAddress": "Rue de la Gare",

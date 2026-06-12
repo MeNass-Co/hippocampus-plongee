@@ -23,6 +23,7 @@ export default function Footer() {
                 height={80}
                 className="h-20 w-auto opacity-90"
                 loading="lazy"
+                decoding="async"
               />
               <h2 className="font-headline text-3xl font-bold text-on-surface tracking-tighter leading-tight">
                 HIPPOCAMPUS

@@ -36,7 +36,7 @@ function InputField({
         required={required}
         placeholder={label}
         aria-label={label}
-        className="peer w-full bg-transparent border-0 border-b border-on-surface/[0.06] py-4 px-0 text-on-surface placeholder:text-on-surface-variant/30 focus:ring-0 focus:outline-none transition-colors duration-500 ease-expo focus:border-primary"
+        className="peer w-full bg-transparent border-0 border-b border-on-surface/[0.06] py-4 px-0 text-on-surface placeholder:text-on-surface-variant/50 focus:ring-0 focus:outline-none transition-colors duration-500 ease-expo focus:border-primary"
       />
       {/* Animated underline */}
       <span className="absolute bottom-0 left-1/2 -translate-x-1/2 h-px w-0 bg-primary transition-all duration-500 ease-expo peer-focus:w-full" />
@@ -66,7 +66,7 @@ function SelectField({
         required={required}
         defaultValue=""
         aria-label={label}
-        className="peer w-full bg-transparent border-0 border-b border-on-surface/[0.06] py-4 px-0 text-on-surface focus:ring-0 focus:outline-none appearance-none cursor-pointer transition-colors duration-500 ease-expo focus:border-primary [&:invalid]:text-on-surface-variant/30"
+        className="peer w-full bg-transparent border-0 border-b border-on-surface/[0.06] py-4 px-0 text-on-surface focus:ring-0 focus:outline-none appearance-none cursor-pointer transition-colors duration-500 ease-expo focus:border-primary [&:invalid]:text-on-surface-variant/50"
       >
         <option value="" disabled className="text-on-surface-variant/30 bg-surface-container">
           {label}
@@ -108,7 +108,7 @@ function TextareaField({
         required={required}
         placeholder={label}
         aria-label={label}
-        className="peer w-full bg-transparent border-0 border-b border-on-surface/[0.06] py-4 px-0 text-on-surface placeholder:text-on-surface-variant/30 focus:ring-0 focus:outline-none resize-none transition-colors duration-500 ease-expo focus:border-primary"
+        className="peer w-full bg-transparent border-0 border-b border-on-surface/[0.06] py-4 px-0 text-on-surface placeholder:text-on-surface-variant/50 focus:ring-0 focus:outline-none resize-none transition-colors duration-500 ease-expo focus:border-primary"
       />
       {/* Animated underline */}
       <span className="absolute bottom-0 left-1/2 -translate-x-1/2 h-px w-0 bg-primary transition-all duration-500 ease-expo peer-focus:w-full" />
@@ -123,7 +123,7 @@ function LocationCard() {
     <div className="card-frame h-full">
       <div className="card-frame-inner bg-surface-container-low p-8 h-full">
         <div className="flex items-center gap-3 mb-4">
-          <span className="text-2xl" role="img" aria-label="Location">
+          <span className="text-2xl" role="img" aria-label="Localisation">
             &#x1F4CD;
           </span>
           <span className="text-[10px] uppercase tracking-[0.3em] text-on-surface-variant/60 font-label">
@@ -207,7 +207,11 @@ export function ContactForm() {
               </h2>
 
               {submitted ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-4">
+                <div
+                  className="flex flex-col items-center justify-center py-16 gap-4"
+                  role="status"
+                  aria-live="polite"
+                >
                   <span className="text-primary text-5xl">&#10003;</span>
                   <p className="font-headline text-xl text-on-surface">
                     Votre client mail a &eacute;t&eacute; ouvert.

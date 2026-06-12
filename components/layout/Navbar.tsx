@@ -11,6 +11,8 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const hamburgerRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   /* ── Scroll detection (rAF-throttled) ── */
   useEffect(() => {
@@ -69,13 +71,22 @@ export default function Navbar() {
     };
   }, [pathname]);
 
-  /* ── Lock body scroll when mobile menu open ── */
+  /* ── Lock body scroll + Escape + focus hand-off when mobile menu open ── */
   useEffect(() => {
     if (mobileOpen) {
       document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
+      closeButtonRef.current?.focus();
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") setMobileOpen(false);
+      };
+      document.addEventListener("keydown", onKeyDown);
+      return () => {
+        document.body.style.overflow = "";
+        document.removeEventListener("keydown", onKeyDown);
+        hamburgerRef.current?.focus();
+      };
     }
+    document.body.style.overflow = "";
     return () => {
       document.body.style.overflow = "";
     };
@@ -122,6 +133,7 @@ export default function Navbar() {
               alt="Hippocampus — hippocampe cyan"
               width={56}
               height={56}
+              decoding="async"
               className="h-14 w-auto transition-transform duration-700 ease-expo group-hover:scale-110 group-hover:-translate-y-0.5"
             />
             HIPPOCAMPUS
@@ -158,8 +170,11 @@ export default function Navbar() {
 
           {/* Hamburger — mobile only */}
           <button
+            ref={hamburgerRef}
             type="button"
             aria-label="Ouvrir le menu"
+            aria-expanded={mobileOpen}
+            aria-controls="mobile-menu"
             className="md:hidden relative w-8 h-6 flex flex-col justify-between focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary rounded-sm"
             onClick={() => setMobileOpen(true)}
           >
@@ -172,9 +187,11 @@ export default function Navbar() {
 
       {/* ── Mobile Fullscreen Overlay ── */}
       <div
+        id="mobile-menu"
         className={`fixed inset-0 z-[60] transition-opacity duration-300 ${
           mobileOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
+        inert={!mobileOpen}
       >
         {/* Backdrop */}
         <div
@@ -191,6 +208,7 @@ export default function Navbar() {
           {/* Close button */}
           <div className="flex justify-end px-6 py-6">
             <button
+              ref={closeButtonRef}
               type="button"
               aria-label="Fermer le menu"
               className="relative w-8 h-8 hover:scale-110 active:scale-95 transition-transform duration-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary rounded-sm"

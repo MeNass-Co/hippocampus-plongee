@@ -16,10 +16,11 @@ export default function NotFound() {
       <div className="relative z-10 text-center px-6 max-w-xl mx-auto">
         {/* Seahorse logo */}
         <img
-          src="/assets/photos/logo-cyan.png"
+          src="/assets/photos/logo-cyan.webp"
           alt=""
           width={112}
           height={112}
+          decoding="async"
           className="mx-auto h-28 w-auto mb-10 opacity-40"
           aria-hidden="true"
         />

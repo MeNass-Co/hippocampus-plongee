@@ -24,7 +24,7 @@ export function Agenda() {
                 </p>
                 <a
                   href="/le-club#contact"
-                  className="mt-8 inline-block rounded-full bg-primary/10 px-6 py-2.5 text-[13px] font-semibold uppercase tracking-[0.2em] text-primary hover:bg-primary/20 transition-colors duration-500 ease-expo"
+                  className="mt-8 inline-block rounded-full bg-primary/10 px-6 py-2.5 text-[13px] font-semibold uppercase tracking-[0.2em] text-primary hover:bg-primary/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary transition-colors duration-500 ease-expo"
                 >
                   Nous contacter
                 </a>

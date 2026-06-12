@@ -248,6 +248,8 @@ export function Gallery() {
         <dialog
           ref={dialogRef}
           open
+          aria-modal="true"
+          aria-label={`Galerie photo — ${currentItem.caption}`}
           className="fixed inset-0 z-50 w-full h-full bg-transparent m-0 p-0 max-w-none max-h-none animate-fade-in"
           onClick={(e) => {
             if (e.target === e.currentTarget) closeLightbox();
@@ -308,6 +310,7 @@ export function Gallery() {
                   src={currentItem.image}
                   alt={currentItem.caption}
                   className="w-full h-full object-cover"
+                  decoding="async"
                 />
               </div>
               <p className="text-center text-on-surface mt-4 font-headline text-lg font-medium">

@@ -26,7 +26,7 @@ export default function MentionsLegales() {
               Base Nautique de Sissonne, 02150 Sissonne, France
               <br />
               E-mail&nbsp;:{" "}
-              <a href="mailto:contact@hippocampus-plongee.fr" className="text-primary hover:underline">
+              <a href="mailto:contact@hippocampus-plongee.fr" className="text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm">
                 contact@hippocampus-plongee.fr
               </a>
             </p>
@@ -56,7 +56,7 @@ export default function MentionsLegales() {
               &agrave; l&apos;&eacute;quipe HIPPOCAMPUS et ne sont jamais transmises &agrave; des tiers.
               Conform&eacute;ment au RGPD, vous disposez d&apos;un droit d&apos;acc&egrave;s, de rectification et de
               suppression de vos donn&eacute;es en contactant{" "}
-              <a href="mailto:contact@hippocampus-plongee.fr" className="text-primary hover:underline">
+              <a href="mailto:contact@hippocampus-plongee.fr" className="text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm">
                 contact@hippocampus-plongee.fr
               </a>.
             </p>
@@ -66,7 +66,7 @@ export default function MentionsLegales() {
         <div className="mt-16">
           <Link
             href="/"
-            className="text-xs uppercase tracking-[0.2em] text-primary hover:underline transition-colors duration-500"
+            className="text-xs uppercase tracking-[0.2em] text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm transition-colors duration-500"
           >
             &larr; Retour &agrave; l&apos;accueil
           </Link>

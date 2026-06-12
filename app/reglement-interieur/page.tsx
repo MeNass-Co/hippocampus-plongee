@@ -65,7 +65,7 @@ export default function ReglementInterieur() {
           <p className="text-on-surface-variant/60 text-xs italic mt-8">
             Ce r&egrave;glement sera compl&eacute;t&eacute; prochainement. Pour toute question, contactez-nous
             &agrave;{" "}
-            <a href="mailto:contact@hippocampus-plongee.fr" className="text-primary hover:underline">
+            <a href="mailto:contact@hippocampus-plongee.fr" className="text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm">
               contact@hippocampus-plongee.fr
             </a>.
           </p>
@@ -74,7 +74,7 @@ export default function ReglementInterieur() {
         <div className="mt-16">
           <Link
             href="/"
-            className="text-xs uppercase tracking-[0.2em] text-primary hover:underline transition-colors duration-500"
+            className="text-xs uppercase tracking-[0.2em] text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm transition-colors duration-500"
           >
             &larr; Retour &agrave; l&apos;accueil
           </Link>

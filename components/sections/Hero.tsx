@@ -4,14 +4,16 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { preload } from "react-dom";
 
 /* ─── Config ─── */
-const FRAME_COUNT = 211;
+/* 418 frames: the original 24fps clip motion-interpolated to 60fps
+   (minterpolate mci) — real in-betweens, no duplicated frames. */
+const FRAME_COUNT = 418;
 const EXPO_EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
 /* Exponential smoothing time constant (ms) — how fast the rendered frame
    chases the scroll target. Lower = snappier, higher = more inertia. */
 const SMOOTHING_TAU = 90;
 /* Coarse-lattice loading step: every Nth frame loads first so fast scrubbing
    always finds a nearby frame while the gaps fill in. */
-const LATTICE_STEP = 8;
+const LATTICE_STEP = 16;
 const MAX_PARALLEL_LOADS = 6;
 
 function getFrameSrc(index: number): string {

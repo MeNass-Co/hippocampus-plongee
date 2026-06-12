@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { preload } from "react-dom";
 
 /* ─── Config ─── */
 /* 418 frames: the original 24fps clip motion-interpolated to 60fps
-   (minterpolate mci) — real in-betweens, no duplicated frames. */
+   (minterpolate mci) — real in-betweens, no duplicated frames.
+   Two encoded sets: 1920px masters for desktop, 960px for mobile. */
 const FRAME_COUNT = 418;
 const EXPO_EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
 /* Exponential smoothing time constant (ms) — how fast the rendered frame
@@ -15,9 +15,21 @@ const SMOOTHING_TAU = 90;
    always finds a nearby frame while the gaps fill in. */
 const LATTICE_STEP = 16;
 const MAX_PARALLEL_LOADS = 6;
+/* Decoded-bitmap budget: holding all 418 frames decoded would cost ~3.4GB
+   at 1920px. Instead the compressed blobs stay in memory (~20MB) and only
+   the lattice plus a sliding window around the scrub position is decoded. */
+const MAX_PARALLEL_DECODES = 4;
+const DECODE_WINDOW = 16; // full-res frames kept within ±N of the position
+const EVICT_MARGIN = 10; // hysteresis before closing a decoded frame
+/* On desktop the always-decoded lattice fallbacks are downsized: they only
+   show mid-fast-scrub where softness is invisible, and 27 full 1920 bitmaps
+   would pin ~220MB for nothing. */
+const LATTICE_FALLBACK_WIDTH = 960;
 
-function getFrameSrc(index: number): string {
-  return `/assets/video/frames/frame_${String(index).padStart(3, "0")}.webp`;
+type FrameRes = 1920 | 960;
+
+function getFrameSrc(index: number, res: FrameRes): string {
+  return `/assets/video/frames/${res}/frame_${String(index).padStart(3, "0")}.webp`;
 }
 
 /* ─── Panel definitions ─── */
@@ -247,21 +259,22 @@ export function Hero() {
   const renderedFrameRef = useRef(0); // float position the canvas shows
   const lastDrawnRef = useRef(-1); // last float position actually drawn
   const needsRedrawRef = useRef(false); // resize or a better frame arrived
+  const maintainWindowRef = useRef<() => void>(() => {});
+  const lastWindowCenterRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const inViewRef = useRef(true);
   const lastTickRef = useRef(0);
   const [progress, setProgress] = useState(0);
   const [imagesLoaded, setImagesLoaded] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-
-  /* Emit <link rel="preload"> for the lattice in the initial HTML: the
-     backbone frames start downloading with the page, before hydration,
-     so the scrub responds the moment the user reaches for the wheel. */
-  for (let i = 0; i < FRAME_COUNT; i += LATTICE_STEP) {
-    // crossOrigin anonymous matches fetch()'s default cors/same-origin mode;
-    // without it the preload goes unused and every frame downloads twice
-    preload(getFrameSrc(i + 1), { as: "fetch", crossOrigin: "anonymous" });
-  }
+  /* Resolution is picked once: a resize across the breakpoint keeps the
+     already-loaded set (drawCover scales it) rather than re-downloading. */
+  const [res] = useState<FrameRes>(() =>
+    typeof window !== "undefined" &&
+    window.matchMedia("(min-width: 1024px)").matches
+      ? 1920
+      : 960
+  );
 
   /* Detect reduced motion preference */
   useEffect(() => {
@@ -351,17 +364,95 @@ export function Hero() {
     [nearestLoaded]
   );
 
-  /* Frame loading: the coarse lattice loads first so fast scrubbing always
-     lands near a real frame; after that, whichever unloaded frame is closest
-     to the user's live scroll position wins — first-load scrolling catches up
-     in real time instead of waiting for a fixed sequence.
-     createImageBitmap decodes off the main thread — no decode jank on draw. */
+  /* Frame loading, two layers.
+     Network: the coarse lattice downloads first so fast scrubbing always
+     lands near a real frame; after that, whichever unfetched frame is
+     closest to the live scroll position wins. Compressed blobs are all
+     kept — the full set is ~20MB.
+     Decode: only the lattice plus a sliding window around the scrub
+     position holds decoded ImageBitmaps; frames leaving the window are
+     closed. Decoding all 418 would cost gigabytes of raster memory.
+     createImageBitmap decodes off the main thread — no decode jank. */
   useEffect(() => {
     if (prefersReducedMotion) return;
 
+    const blobs: (Blob | null)[] = new Array(FRAME_COUNT).fill(null);
     const bitmaps: (ImageBitmap | null)[] = new Array(FRAME_COUNT).fill(null);
     bitmapsRef.current = bitmaps;
+    const decoding = new Set<number>();
     const controller = new AbortController();
+    const isLattice = (i: number) => i % LATTICE_STEP === 0;
+
+    const decodeFrame = (i: number): Promise<ImageBitmap> => {
+      const blob = blobs[i]!;
+      if (res === 1920 && isLattice(i)) {
+        return createImageBitmap(blob, {
+          resizeWidth: LATTICE_FALLBACK_WIDTH,
+          resizeQuality: "high",
+          // Safari < 15 lacks resize options — fall back to full size
+        }).catch(() => createImageBitmap(blob));
+      }
+      return createImageBitmap(blob);
+    };
+
+    const maintainWindow = () => {
+      if (controller.signal.aborted) return;
+      const center = renderedFrameRef.current;
+
+      // Evict full-res frames that drifted out of the window (lattice stays)
+      for (let i = 0; i < FRAME_COUNT; i++) {
+        if (
+          bitmaps[i] &&
+          !isLattice(i) &&
+          Math.abs(i - center) > DECODE_WINDOW + EVICT_MARGIN
+        ) {
+          bitmaps[i]!.close();
+          bitmaps[i] = null;
+        }
+      }
+
+      // Decode wanted frames, nearest to the scrub position first
+      while (decoding.size < MAX_PARALLEL_DECODES) {
+        let best = -1;
+        let bestDist = Infinity;
+        for (let i = 0; i < FRAME_COUNT; i++) {
+          if (bitmaps[i] || !blobs[i] || decoding.has(i)) continue;
+          const d = Math.abs(i - center);
+          if (!isLattice(i) && d > DECODE_WINDOW) continue;
+          if (d < bestDist) {
+            bestDist = d;
+            best = i;
+          }
+        }
+        if (best < 0) break;
+        const index = best;
+        decoding.add(index);
+        decodeFrame(index)
+          .then((bitmap) => {
+            decoding.delete(index);
+            if (controller.signal.aborted) {
+              bitmap.close();
+              return;
+            }
+            // Re-check: the scrub may have moved on while we decoded
+            const d = Math.abs(index - renderedFrameRef.current);
+            if (!isLattice(index) && d > DECODE_WINDOW + EVICT_MARGIN) {
+              bitmap.close();
+            } else {
+              bitmaps[index] = bitmap;
+              // Repaint on arrival: a better frame replaces a distant
+              // fallback without waiting for the next scroll
+              needsRedrawRef.current = true;
+              if (index === 0) setImagesLoaded(true);
+            }
+            maintainWindow();
+          })
+          .catch(() => {
+            decoding.delete(index);
+          });
+      }
+    };
+    maintainWindowRef.current = maintainWindow;
 
     const lattice: number[] = [];
     for (let i = 0; i < FRAME_COUNT; i += LATTICE_STEP) lattice.push(i);
@@ -390,19 +481,12 @@ export function Hero() {
     const pump = () => {
       const index = nextIndex();
       if (index < 0) return;
-      fetch(getFrameSrc(index + 1), { signal: controller.signal })
-        .then((res) => (res.ok ? res.blob() : Promise.reject(res.status)))
-        .then((blob) => createImageBitmap(blob))
-        .then((bitmap) => {
-          if (controller.signal.aborted) {
-            bitmap.close();
-            return;
-          }
-          bitmaps[index] = bitmap;
-          // Repaint on arrival: if the canvas is showing a distant fallback,
-          // the better frame replaces it without waiting for the next scroll
-          needsRedrawRef.current = true;
-          if (index === 0) setImagesLoaded(true);
+      fetch(getFrameSrc(index + 1, res), { signal: controller.signal })
+        .then((r) => (r.ok ? r.blob() : Promise.reject(r.status)))
+        .then((blob) => {
+          if (controller.signal.aborted) return;
+          blobs[index] = blob;
+          maintainWindow();
         })
         .catch(() => {
           /* aborted or network error — nearestLoaded covers the gap */
@@ -415,10 +499,11 @@ export function Hero() {
 
     return () => {
       controller.abort();
+      maintainWindowRef.current = () => {};
       for (const b of bitmaps) b?.close();
       bitmapsRef.current = [];
     };
-  }, [prefersReducedMotion]);
+  }, [prefersReducedMotion, res]);
 
   /* Render loop — runs while the hero is on screen. Reads scroll position,
      chases it with time-normalized exponential smoothing, redraws only when
@@ -451,6 +536,12 @@ export function Hero() {
           (target - renderedFrameRef.current) * alpha;
         if (Math.abs(target - rendered) < 0.01) rendered = target;
         renderedFrameRef.current = rendered;
+
+        // Recenter the decode window once the scrub has moved meaningfully
+        if (Math.abs(rendered - lastWindowCenterRef.current) >= 4) {
+          lastWindowCenterRef.current = rendered;
+          maintainWindowRef.current();
+        }
 
         if (
           Math.abs(rendered - lastDrawnRef.current) > 0.004 ||
@@ -566,6 +657,32 @@ export function Hero() {
       className="relative -mt-24"
       style={{ height: "350vh" }}
     >
+      {/* Lattice preloads in the initial HTML: the backbone frames start
+          downloading with the page, before hydration. React 19 hoists these
+          into <head>; the media attribute picks the right resolution set.
+          crossOrigin matches fetch()'s cors mode — without it every preload
+          goes unused and the frames download twice. */}
+      {Array.from({ length: Math.ceil(FRAME_COUNT / LATTICE_STEP) }, (_, k) => {
+        const frame = k * LATTICE_STEP + 1;
+        return [
+          <link
+            key={`pre-1920-${frame}`}
+            rel="preload"
+            as="fetch"
+            crossOrigin="anonymous"
+            media="(min-width: 1024px)"
+            href={getFrameSrc(frame, 1920)}
+          />,
+          <link
+            key={`pre-960-${frame}`}
+            rel="preload"
+            as="fetch"
+            crossOrigin="anonymous"
+            media="(max-width: 1023.98px)"
+            href={getFrameSrc(frame, 960)}
+          />,
+        ];
+      })}
       <div className="sticky top-0 h-dvh overflow-hidden">
         {/* Poster fallback while frames load */}
         <div

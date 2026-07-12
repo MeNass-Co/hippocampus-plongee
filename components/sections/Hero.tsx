@@ -385,6 +385,13 @@ export function Hero() {
     const controller = new AbortController();
     const isLattice = (i: number) => i % LATTICE_STEP === 0;
 
+    /* Mobile decodes 960px rasters (~2MB each vs ~8MB at 1920), so it can
+       afford a much wider window and more decode lanes — fast flicks land
+       on real frames instead of stepping across the 16-frame lattice. */
+    const decodeWindow = res === 960 ? 32 : DECODE_WINDOW;
+    const evictMargin = res === 960 ? 12 : EVICT_MARGIN;
+    const maxDecodes = res === 960 ? 6 : MAX_PARALLEL_DECODES;
+
     const decodeFrame = (i: number): Promise<ImageBitmap> => {
       const blob = blobs[i]!;
       if (res === 1920 && isLattice(i)) {
@@ -406,7 +413,7 @@ export function Hero() {
         if (
           bitmaps[i] &&
           !isLattice(i) &&
-          Math.abs(i - center) > DECODE_WINDOW + EVICT_MARGIN
+          Math.abs(i - center) > decodeWindow + evictMargin
         ) {
           bitmaps[i]!.close();
           bitmaps[i] = null;
@@ -414,13 +421,13 @@ export function Hero() {
       }
 
       // Decode wanted frames, nearest to the scrub position first
-      while (decoding.size < MAX_PARALLEL_DECODES) {
+      while (decoding.size < maxDecodes) {
         let best = -1;
         let bestDist = Infinity;
         for (let i = 0; i < FRAME_COUNT; i++) {
           if (bitmaps[i] || !blobs[i] || decoding.has(i)) continue;
           const d = Math.abs(i - center);
-          if (!isLattice(i) && d > DECODE_WINDOW) continue;
+          if (!isLattice(i) && d > decodeWindow) continue;
           if (d < bestDist) {
             bestDist = d;
             best = i;
@@ -438,7 +445,7 @@ export function Hero() {
             }
             // Re-check: the scrub may have moved on while we decoded
             const d = Math.abs(index - renderedFrameRef.current);
-            if (!isLattice(index) && d > DECODE_WINDOW + EVICT_MARGIN) {
+            if (!isLattice(index) && d > decodeWindow + evictMargin) {
               bitmap.close();
             } else {
               bitmaps[index] = bitmap;
@@ -542,7 +549,13 @@ export function Hero() {
 
         const target = p * (FRAME_COUNT - 1);
         const dt = Math.min(Math.max(now - lastTickRef.current, 1), 64);
-        const alpha = 1 - Math.exp(-dt / SMOOTHING_TAU);
+        /* Fast flicks widen the time constant: the scrub glides through
+           fewer frames per second, so the decoder keeps pace and lattice
+           steps stay hidden behind the crossfade. Settles back to the
+           snappy base tau as the gap closes. */
+        const gap = Math.abs(target - renderedFrameRef.current);
+        const tau = SMOOTHING_TAU + Math.min(gap * 2, 190);
+        const alpha = 1 - Math.exp(-dt / tau);
         let rendered =
           renderedFrameRef.current +
           (target - renderedFrameRef.current) * alpha;

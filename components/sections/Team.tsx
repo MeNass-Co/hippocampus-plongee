@@ -60,12 +60,21 @@ export function Team() {
                 className="border-t border-on-surface/[0.06] py-8 md:py-14 transition-colors duration-500 ease-expo hover:bg-on-surface/[0.02]"
               >
                 <div className="grid gap-6 md:grid-cols-12 md:items-center md:gap-10">
-                  {/* Avatar */}
+                  {/* Avatar — initials monogram */}
                   <div className="md:col-span-1">
                     <div
-                      className="w-16 h-16 rounded-full flex-shrink-0"
+                      className="w-16 h-16 rounded-full flex-shrink-0 flex items-center justify-center ring-1 ring-on-surface/[0.08]"
                       style={{ background: member.gradient }}
-                    />
+                      aria-hidden="true"
+                    >
+                      <span className="font-headline text-lg font-light tracking-[0.08em] text-on-surface/80">
+                        {member.name
+                          .split(" ")
+                          .map((part) => part[0])
+                          .slice(0, 2)
+                          .join("")}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Name + Role */}

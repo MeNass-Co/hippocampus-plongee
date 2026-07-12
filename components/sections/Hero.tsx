@@ -710,6 +710,20 @@ export function Hero() {
         {/* Canvas for frame sequence */}
         <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
 
+        {/* Film grain — masks WebP banding in the dark gradients and gives
+            the footage a cinema texture. Static SVG noise, overlay blend,
+            faint enough to be felt rather than seen. */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
+            backgroundSize: "160px 160px",
+            opacity: 0.05,
+            mixBlendMode: "overlay",
+          }}
+        />
+
         {/* Radial vignette */}
         <div
           className="absolute inset-0 pointer-events-none"

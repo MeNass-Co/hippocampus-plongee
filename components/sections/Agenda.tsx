@@ -15,7 +15,13 @@ export function Agenda() {
           {/* Empty state — elegant placeholder */}
           <ScrollReveal animation="fade-up" delay={200}>
             <div className="card-frame" style={{ borderRadius: '2rem' }}>
-              <div className="card-frame-inner flex flex-col items-center justify-center py-20 md:py-28 text-center" style={{ borderRadius: 'calc(2rem - 0.375rem)', backgroundColor: 'rgba(4, 14, 26, 0.95)' }}>
+              <div className="card-frame-inner flex flex-col items-center justify-center py-14 md:py-20 text-center" style={{ borderRadius: 'calc(2rem - 0.375rem)', backgroundColor: 'rgba(4, 14, 26, 0.95)' }}>
+                <div className="mb-6 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center" aria-hidden="true">
+                  <svg className="w-5 h-5 text-primary/80" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.25">
+                    <rect x="3" y="4.5" width="14" height="12" rx="2" />
+                    <path d="M3 8.5h14M7 2.5v3M13 2.5v3" strokeLinecap="round" />
+                  </svg>
+                </div>
                 <p className="font-headline text-2xl md:text-3xl font-light tracking-tight text-on-surface/70">
                   Saison 2026 — 2027
                 </p>

@@ -131,6 +131,7 @@ function TextPanel({
           <img
             src="/assets/photos/logo-cyan.webp"
             alt=""
+            fetchPriority="high"
             width={420}
             height={420}
             className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-[280px] md:h-[360px] lg:h-[420px] w-auto opacity-[0.15] pointer-events-none select-none"
@@ -674,6 +675,19 @@ export function Hero() {
           into <head>; the media attribute picks the right resolution set.
           crossOrigin matches fetch()'s cors mode — without it every preload
           goes unused and the frames download twice. */}
+      {/* LCP-critical images jump the queue ahead of the frame lattice */}
+      <link
+        rel="preload"
+        as="image"
+        fetchPriority="high"
+        href="/assets/video/hero-poster.webp"
+      />
+      <link
+        rel="preload"
+        as="image"
+        fetchPriority="high"
+        href="/assets/photos/logo-cyan.webp"
+      />
       {Array.from({ length: Math.ceil(FRAME_COUNT / LATTICE_STEP) }, (_, k) => {
         const frame = k * LATTICE_STEP + 1;
         return [
@@ -681,6 +695,7 @@ export function Hero() {
             key={`pre-1920-${frame}`}
             rel="preload"
             as="fetch"
+            fetchPriority="low"
             crossOrigin="anonymous"
             media="(min-width: 1024px)"
             href={getFrameSrc(frame, 1920)}
@@ -689,6 +704,7 @@ export function Hero() {
             key={`pre-960-${frame}`}
             rel="preload"
             as="fetch"
+            fetchPriority="low"
             crossOrigin="anonymous"
             media="(max-width: 1023.98px)"
             href={getFrameSrc(frame, 960)}
@@ -716,9 +732,8 @@ export function Hero() {
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
-            backgroundImage:
-              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
-            backgroundSize: "160px 160px",
+            backgroundImage: "url('/assets/grain.png')",
+            backgroundSize: "128px 128px",
             opacity: 0.05,
             mixBlendMode: "overlay",
           }}

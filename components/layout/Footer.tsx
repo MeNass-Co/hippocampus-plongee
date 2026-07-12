@@ -77,19 +77,19 @@ export default function Footer() {
 
         {/* Bottom bar */}
         <div className="border-t border-on-surface/[0.06] pt-12 mt-16 flex flex-col md:flex-row items-center justify-between gap-4">
-          <p className="text-[10px] text-on-surface/40 uppercase tracking-widest">
-            &copy; {new Date().getFullYear()} HIPPOCAMPUS — Club de Plong&eacute;e Sous-Marine. Affili&eacute; FFESSM.
+          <p className="text-[10px] text-on-surface/60 uppercase tracking-widest">
+            &copy; {new Date().getFullYear()}{" "}HIPPOCAMPUS — Club de Plong&eacute;e Sous-Marine. Affili&eacute; FFESSM.
           </p>
           <div className="flex gap-6">
             <Link
               href="/mentions-legales"
-              className="text-[10px] text-on-surface/40 uppercase tracking-widest hover:text-primary transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
+              className="text-[10px] text-on-surface/60 uppercase tracking-widest hover:text-primary transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
             >
               Mentions Légales
             </Link>
             <Link
               href="/reglement-interieur"
-              className="text-[10px] text-on-surface/40 uppercase tracking-widest hover:text-primary transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
+              className="text-[10px] text-on-surface/60 uppercase tracking-widest hover:text-primary transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
             >
               Règlement Intérieur
             </Link>

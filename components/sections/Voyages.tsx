@@ -8,7 +8,7 @@ const VOYAGES = {
   main: {
     title: "Caraïbes & Eaux Turquoise",
     subtitle: "Guadeloupe",
-    badge: "Prochain Départ : 2025",
+    badge: "Prochaine Expédition",
     gradient: "linear-gradient(135deg, #0a2540 0%, #003738 50%, #13212e 100%)",
     image: "/assets/photos/voyage-med.webp",
   },
